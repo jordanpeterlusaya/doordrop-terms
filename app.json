@@ -4,19 +4,25 @@
     "slug": "DoorDrop",
     "version": "1.0.0",
     "orientation": "portrait",
-    "icon": "./assets/images/icon.png",
+    "icon": "./assets/images/image1-app-icon-pro.png",
     "scheme": "doordrop",
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
     "ios": {
-      "supportsTablet": true
+      "supportsTablet": true,
+      "bundleIdentifier": "com.doordrop.app"
     },
     "android": {
+      "package": "com.doordrop.app",
+      "permissions": [
+        "ACCESS_COARSE_LOCATION",
+        "ACCESS_FINE_LOCATION",
+        "READ_CONTACTS"
+      ],
       "adaptiveIcon": {
-        "backgroundColor": "#E6F4FE",
-        "foregroundImage": "./assets/images/android-icon-foreground.png",
-        "backgroundImage": "./assets/images/android-icon-background.png",
-        "monochromeImage": "./assets/images/android-icon-monochrome.png"
+        "backgroundColor": "#FFFFFF",
+        "foregroundImage": "./assets/images/image1-adaptive-foreground-minimal.png",
+        "monochromeImage": "./assets/images/doordrop-adaptive-monochrome.png"
       },
       "edgeToEdgeEnabled": true,
       "predictiveBackGestureEnabled": false
@@ -30,19 +36,29 @@
       [
         "expo-splash-screen",
         {
-          "image": "./assets/images/splash-icon.png",
-          "imageWidth": 200,
+          "image": "./assets/images/image1-app-icon-pro.png",
+          "imageWidth": 112,
           "resizeMode": "contain",
           "backgroundColor": "#ffffff",
           "dark": {
-            "backgroundColor": "#000000"
+            "image": "./assets/images/image1-app-icon-pro.png",
+            "backgroundColor": "#ffffff"
           }
         }
       ]
     ],
     "experiments": {
-      "typedRoutes": true,
-      "reactCompiler": true
-    }
+      "typedRoutes": true
+    },
+    "extra": {
+      "router": {},
+      "googleAuth": {
+        "clientId": "590216923570-btv143fr3at96oat9olcgklf9ko3t5fi.apps.googleusercontent.com"
+      },
+      "eas": {
+        "projectId": "c2343112-5064-4d1f-bee7-920713b37d21"
+      }
+    },
+    "owner": "lusaya"
   }
 }

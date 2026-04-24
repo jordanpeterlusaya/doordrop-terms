@@ -1,16 +1,20 @@
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { Alert, StyleSheet, Switch, Text, TextInput, View } from 'react-native';
 
+import { AuthSessionBoundary } from '@/components/auth/session-boundary';
 import { CargoHeader, CargoScreen, PrimaryButton } from '@/components/cargo-ui';
 import { cargoTheme } from '@/constants/cargo-theme';
+import { upsertUserProfile } from '@/lib/user-profile';
+import { useAuthSession } from '@/providers/auth-provider';
 
-export default function ProfileEditScreen() {
+function ProfileEditScreenContent() {
   const router = useRouter();
-  const [fullName, setFullName] = useState('DoorDrop Studio');
-  const [phone, setPhone] = useState('+255 742 000 111');
-  const [email, setEmail] = useState('ops@doordrop.co.tz');
+  const { profile, refreshProfile, user } = useAuthSession();
+  const [fullName, setFullName] = useState('');
+  const [phone, setPhone] = useState('');
+  const [email, setEmail] = useState('');
   const [city, setCity] = useState('Dar es Salaam');
   const [defaultPayment, setDefaultPayment] = useState('Cash on delivery');
   const [orderAlerts, setOrderAlerts] = useState(true);
@@ -30,9 +34,32 @@ export default function ProfileEditScreen() {
     [fullName]
   );
 
-  const handleSave = () => {
-    Alert.alert('Profile updated', 'Your account details and notification preferences have been saved.');
-    router.back();
+  useEffect(() => {
+    setFullName(profile?.fullName || user?.displayName || '');
+    setPhone(profile?.phoneNumber || user?.phoneNumber || '');
+    setEmail(user?.email || '');
+  }, [profile?.fullName, profile?.phoneNumber, user?.displayName, user?.email, user?.phoneNumber]);
+
+  const handleSave = async () => {
+    if (!user) {
+      Alert.alert('Profile unavailable', 'Sign in again to update your profile.');
+      return;
+    }
+
+    try {
+      await upsertUserProfile({
+        uid: user.uid,
+        fullName: fullName.trim(),
+        email: email.trim().toLowerCase(),
+        phoneNumber: phone.trim(),
+        phoneVerified: true,
+      });
+      await refreshProfile();
+      Alert.alert('Profile updated', 'Your account details and notification preferences have been saved.');
+      router.back();
+    } catch {
+      Alert.alert('Save failed', 'Please try again.');
+    }
   };
 
   return (
@@ -121,6 +148,14 @@ export default function ProfileEditScreen() {
 
       <PrimaryButton label="Save changes" icon="content-save-outline" onPress={handleSave} style={!formIsValid ? styles.buttonDisabled : undefined} />
     </CargoScreen>
+  );
+}
+
+export default function ProfileEditScreen() {
+  return (
+    <AuthSessionBoundary>
+      <ProfileEditScreenContent />
+    </AuthSessionBoundary>
   );
 }
 

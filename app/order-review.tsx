@@ -1,82 +1,185 @@
 import { MaterialCommunityIcons } from '@expo/vector-icons';
+import { FirebaseError } from 'firebase/app';
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import React from 'react';
-import { StyleSheet, Text, View } from 'react-native';
+import React, { useMemo, useState } from 'react';
+import { ActivityIndicator, StyleSheet, Text, View } from 'react-native';
 
+import { AuthSessionBoundary } from '@/components/auth/session-boundary';
 import { CargoHeader, CargoScreen, PrimaryButton, SummaryRow } from '@/components/cargo-ui';
-import {
-  cargoTheme,
-  cargoVehicles,
-  parcelPackages,
-  type FlowType,
-  type ParcelScope,
-} from '@/constants/cargo-theme';
+import { cargoTheme, cargoVehicles, type FlowType, type ParcelScope } from '@/constants/cargo-theme';
+import { typography } from '@/constants/typography';
+import { getFirebaseDataErrorMessage } from '@/lib/auth-errors';
+import { createDeliveryOrder } from '@/lib/delivery-data';
+import { useAuthSession } from '@/providers/auth-provider';
 
-export default function OrderReviewScreen() {
+function parseCoordinate(value?: string | string[]) {
+  const normalized = Array.isArray(value) ? value[0] : value;
+  if (!normalized?.trim()) {
+    return undefined;
+  }
+  const parsed = Number(normalized);
+  return Number.isFinite(parsed) ? parsed : undefined;
+}
+
+function OrderReviewScreenContent() {
   const router = useRouter();
+  const { authError, profile, user } = useAuthSession();
   const params = useLocalSearchParams<{
     flow?: string;
     scope?: string;
     parcelType?: string;
     parcelLabel?: string;
+    price?: string;
+    eta?: string;
+    pricingRoute?: string;
     vehicle?: string;
     timing?: string;
     pickup?: string;
+    pickupLat?: string;
+    pickupLng?: string;
     dropoff?: string;
+    dropoffLat?: string;
+    dropoffLng?: string;
     recipientName?: string;
     recipientPhone?: string;
+    parcelWeightKg?: string;
     scheduleDate?: string;
     scheduleTime?: string;
+    distance?: string;
+    duration?: string;
   }>();
+  const [creatingOrder, setCreatingOrder] = useState(false);
+  const [error, setError] = useState('');
 
   const flow: FlowType = params.flow === 'cargo' ? 'cargo' : 'parcel';
   const scope: ParcelScope = params.scope === 'outside' ? 'outside' : 'city';
-  const parcelType = parcelPackages.find((item) => item.key === params.parcelType) ?? parcelPackages[0];
   const vehicle = cargoVehicles.find((item) => item.key === params.vehicle) ?? cargoVehicles[1];
+  const parseTzs = (value: string) => Number(value.replace(/[^\d]/g, '')) || 0;
+  const formatTzs = (amount: number) => `TZS ${amount.toLocaleString('en-US')}`;
+
   const timing =
     params.timing === 'later'
       ? `Scheduled${params.scheduleDate || params.scheduleTime ? ` • ${[params.scheduleDate, params.scheduleTime].filter(Boolean).join(' at ')}` : ''}`
       : 'Dispatch now';
-  const parseTzs = (value: string) => Number(value.replace(/[^\d]/g, '')) || 0;
-  const formatTzs = (amount: number) => `TZS ${amount.toLocaleString('en-US')}`;
 
   const serviceLabel =
     flow === 'cargo' ? vehicle.title : scope === 'city' ? 'In-city parcel delivery' : 'Outside-city parcel delivery';
   const estimatedFare =
-    flow === 'cargo' ? vehicle.price : scope === 'city' ? 'TZS 6,500' : 'TZS 18,500';
-  const eta = flow === 'cargo' ? vehicle.eta : scope === 'city' ? '15-30 min' : '3-5 hrs';
+    flow === 'cargo' ? params.price ?? vehicle.price : params.price ?? (scope === 'city' ? 'TZS 6,500' : 'TZS 18,500');
+  const eta = flow === 'cargo' ? params.duration ?? vehicle.eta : params.eta ?? (scope === 'city' ? '15-30 min' : '3-5 hrs');
   const estimatedTotal =
-    flow === 'cargo' ? formatTzs(parseTzs(vehicle.price) + 1000) : scope === 'city' ? 'TZS 7,500' : 'TZS 19,500';
-  const pickupValue = flow === 'cargo' ? params.pickup ?? 'Mlimani City loading bay' : params.pickup ?? 'Posta Mpya, Azikiwe Street';
-  const dropoffValue =
     flow === 'cargo'
-      ? params.dropoff ?? 'Kariakoo wholesale district'
-      : params.dropoff ?? (scope === 'city' ? 'Masaki, Haile Selassie Road' : 'Morogoro town center');
+      ? formatTzs(parseTzs(params.price ?? vehicle.price) + 1000)
+      : params.price?.includes('-')
+        ? params.price
+        : formatTzs(parseTzs(params.price ?? (scope === 'city' ? 'TZS 6,500' : 'TZS 18,500')) + 1000);
+  const pickupValue = params.pickup ?? (flow === 'cargo' ? 'Mlimani City loading bay' : 'Posta Mpya, Azikiwe Street');
+  const dropoffValue =
+    params.dropoff ??
+    (flow === 'cargo' ? 'Kariakoo wholesale district' : scope === 'city' ? 'Masaki, Haile Selassie Road' : 'Morogoro town center');
+  const parcelTypeLabel = params.parcelLabel ?? 'Parcel order';
+  const parcelWeightLabel = params.parcelWeightKg?.trim() ? `${params.parcelWeightKg.trim()} kg` : '';
+  const pricingRoute = params.pricingRoute;
+  const pickupLatitude = useMemo(() => parseCoordinate(params.pickupLat), [params.pickupLat]);
+  const pickupLongitude = useMemo(() => parseCoordinate(params.pickupLng), [params.pickupLng]);
+  const dropoffLatitude = useMemo(() => parseCoordinate(params.dropoffLat), [params.dropoffLat]);
+  const dropoffLongitude = useMemo(() => parseCoordinate(params.dropoffLng), [params.dropoffLng]);
+  const customerName = profile?.fullName?.trim() || user?.displayName?.trim() || 'DoorDrop Customer';
+  const customerPhone = profile?.phoneNumber?.trim() || '';
+  const customerEmail = user?.email?.trim().toLowerCase() || '';
   const recipientValue =
     params.recipientName || params.recipientPhone
       ? [params.recipientName, params.recipientPhone].filter(Boolean).join(' • ')
-      : 'Amina Salim • +255 744 123 222';
-  const parcelTypeLabel = params.parcelLabel ?? parcelType.title;
+      : 'Recipient details will be confirmed by dispatch';
+
+  const handleCreateOrder = async () => {
+    if (!user || creatingOrder) {
+      return;
+    }
+
+    setCreatingOrder(true);
+    setError('');
+
+    try {
+      const order = await createDeliveryOrder({
+        userId: user.uid,
+        customerName,
+        customerEmail,
+        customerPhone,
+        flow,
+        serviceLabel,
+        pickupLabel: pickupValue,
+        dropoffLabel: dropoffValue,
+        pickupLatitude,
+        pickupLongitude,
+        dropoffLatitude,
+        dropoffLongitude,
+        etaLabel: eta,
+        fareLabel: estimatedFare,
+        totalLabel: estimatedTotal,
+        routeLabel: pricingRoute ?? `${pickupValue} to ${dropoffValue}`,
+        timingMode: params.timing === 'later' ? 'later' : 'now',
+        scheduleDate: params.scheduleDate,
+        scheduleTime: params.scheduleTime,
+        scheduleLabel: timing,
+        recipientName: params.recipientName?.trim() || 'Recipient not provided',
+        recipientPhone: params.recipientPhone?.trim() || 'Not provided',
+        parcelScope: flow === 'parcel' ? scope : undefined,
+        parcelTypeKey: flow === 'parcel' ? params.parcelType : undefined,
+        parcelTypeLabel: flow === 'parcel' ? parcelTypeLabel : undefined,
+        cargoVehicleKey: flow === 'cargo' ? vehicle.key : undefined,
+        cargoVehicleLabel: flow === 'cargo' ? vehicle.title : undefined,
+        cargoCapacityLabel: flow === 'cargo' ? vehicle.capacity : undefined,
+        distanceLabel: flow === 'cargo' ? params.distance : undefined,
+        durationLabel: flow === 'cargo' ? params.duration : undefined,
+      });
+
+      router.replace({
+        pathname: '/order-created',
+        params: {
+          orderId: order.id,
+        },
+      });
+    } catch (saveError) {
+      const message =
+        saveError instanceof FirebaseError
+          ? getFirebaseDataErrorMessage(saveError.code, 'We could not save this order yet. Please try again.')
+          : saveError instanceof Error
+            ? saveError.message
+            : 'We could not save this order yet. Please try again.';
+      setError(message);
+    } finally {
+      setCreatingOrder(false);
+    }
+  };
 
   return (
     <CargoScreen
       contentContainerStyle={styles.content}
       footer={
         <View style={styles.footer}>
-          <PrimaryButton
-            label="Create order"
-            icon="check-circle-outline"
-            onPress={() =>
-              router.push({
-                pathname: '/order-created',
-                params: {
-                  flow,
-                  scope,
-                  vehicle: vehicle.key,
-                },
-              })
-            }
-          />
+          {user ? (
+            <PrimaryButton
+              label={creatingOrder ? 'Creating order...' : 'Create order'}
+              icon="check-circle-outline"
+              onPress={handleCreateOrder}
+              style={creatingOrder ? styles.buttonDisabled : undefined}
+            />
+          ) : (
+            <View style={styles.authFooterActions}>
+              <PrimaryButton
+                label="Login to complete"
+                onPress={() => router.push({ pathname: '/login', params: { returnTo: '/order-review' } })}
+              />
+              <PrimaryButton
+                label="Register"
+                variant="secondary"
+                onPress={() => router.push({ pathname: '/register', params: { returnTo: '/order-review' } })}
+              />
+            </View>
+          )}
+          {creatingOrder ? <ActivityIndicator style={styles.loadingIndicator} color={cargoTheme.colors.primary} /> : null}
+          {error || authError ? <Text style={styles.errorText}>{error || authError}</Text> : null}
         </View>
       }>
       <CargoHeader
@@ -98,14 +201,29 @@ export default function OrderReviewScreen() {
         </View>
         <Text style={styles.highlightTitle}>{serviceLabel}</Text>
         <Text style={styles.highlightText}>
-          Pickup from central Dar es Salaam with verified driver assignment and live route visibility after booking.
+          Once you create the order it is sent into DoorDrop dispatch, where our team can assign the best driver in real time.
         </Text>
       </View>
+
+      {!user ? (
+        <View style={styles.authGateCard}>
+          <View style={styles.authGateBadge}>
+            <MaterialCommunityIcons name="account-lock-outline" size={16} color="#FFFFFF" />
+            <Text style={styles.authGateBadgeText}>Final step</Text>
+          </View>
+          <Text style={styles.authGateTitle}>Login to complete this order</Text>
+          <Text style={styles.authGateText}>
+            If you already have a DoorDrop account, login with your email and password. If you do not have one yet, register first using your full name, phone number, email and password.
+          </Text>
+        </View>
+      ) : null}
 
       <View style={styles.card}>
         <Text style={styles.cardTitle}>Trip summary</Text>
         <SummaryRow label="Pickup" value={pickupValue} />
         <SummaryRow label="Drop-off" value={dropoffValue} />
+        {flow === 'parcel' && pricingRoute ? <SummaryRow label="Pricing lane" value={pricingRoute} /> : null}
+        {flow === 'cargo' && params.distance ? <SummaryRow label="Distance" value={params.distance} /> : null}
         <SummaryRow label="Timing" value={timing} />
         <SummaryRow label="Estimated ETA" value={eta} />
       </View>
@@ -116,7 +234,10 @@ export default function OrderReviewScreen() {
         {flow === 'cargo' ? (
           <SummaryRow label="Vehicle capacity" value={vehicle.capacity} />
         ) : (
-          <SummaryRow label="Parcel type" value={parcelTypeLabel} />
+          <>
+            <SummaryRow label="Parcel type" value={parcelTypeLabel} />
+            {scope === 'outside' && parcelWeightLabel ? <SummaryRow label="Weight" value={parcelWeightLabel} /> : null}
+          </>
         )}
         <SummaryRow label="Recipient" value={recipientValue} />
       </View>
@@ -132,10 +253,18 @@ export default function OrderReviewScreen() {
       <View style={styles.noticeCard}>
         <MaterialCommunityIcons name="shield-check-outline" size={20} color={cargoTheme.colors.primaryDark} />
         <Text style={styles.noticeText}>
-          Driver details, trip code and live tracking will appear immediately after order creation.
+          After the order is created, DoorDrop dispatch receives it instantly and can assign a driver without calling you back.
         </Text>
       </View>
     </CargoScreen>
+  );
+}
+
+export default function OrderReviewScreen() {
+  return (
+    <AuthSessionBoundary>
+      <OrderReviewScreenContent />
+    </AuthSessionBoundary>
   );
 }
 
@@ -150,6 +279,22 @@ const styles = StyleSheet.create({
     backgroundColor: cargoTheme.colors.surface,
     borderTopWidth: 1,
     borderTopColor: '#EAF0F6',
+  },
+  buttonDisabled: {
+    opacity: 0.74,
+  },
+  loadingIndicator: {
+    marginTop: 10,
+  },
+  authFooterActions: {
+    gap: 10,
+  },
+  errorText: {
+    marginTop: 10,
+    fontSize: 12,
+    fontFamily: typography.bold,
+    color: '#DC2626',
+    textAlign: 'center',
   },
   highlightCard: {
     backgroundColor: cargoTheme.colors.darkSurface,
@@ -170,13 +315,13 @@ const styles = StyleSheet.create({
   },
   highlightBadgeText: {
     fontSize: 12,
-    fontWeight: '700',
+    fontFamily: typography.bold,
     color: '#FFFFFF',
   },
   highlightTitle: {
     fontSize: 22,
     lineHeight: 28,
-    fontWeight: '800',
+    fontFamily: typography.extrabold,
     color: '#FFFFFF',
     marginBottom: 8,
   },
@@ -195,9 +340,42 @@ const styles = StyleSheet.create({
   },
   cardTitle: {
     fontSize: 16,
-    fontWeight: '800',
+    fontFamily: typography.extrabold,
     color: cargoTheme.colors.text,
     marginBottom: 14,
+  },
+  authGateCard: {
+    backgroundColor: '#0F172A',
+    borderRadius: 24,
+    padding: 18,
+    marginBottom: 18,
+  },
+  authGateBadge: {
+    alignSelf: 'flex-start',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 999,
+    backgroundColor: 'rgba(255,255,255,0.14)',
+    marginBottom: 12,
+  },
+  authGateBadgeText: {
+    color: '#FFFFFF',
+    fontSize: 12,
+    fontFamily: typography.bold,
+  },
+  authGateTitle: {
+    color: '#FFFFFF',
+    fontSize: 20,
+    fontFamily: typography.extrabold,
+    marginBottom: 8,
+  },
+  authGateText: {
+    color: '#D7E1EA',
+    fontSize: 13,
+    lineHeight: 20,
   },
   noticeCard: {
     flexDirection: 'row',

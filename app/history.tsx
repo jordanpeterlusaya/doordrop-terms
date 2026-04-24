@@ -1,30 +1,71 @@
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
-import React, { useState } from 'react';
-import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import React, { useEffect, useMemo, useState } from 'react';
+import { ActivityIndicator, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 
+import { AuthSessionBoundary } from '@/components/auth/session-boundary';
 import { BottomNav, CargoHeader, CargoScreen, SectionHeader } from '@/components/cargo-ui';
-import { cargoTheme, historyOrders } from '@/constants/cargo-theme';
+import { cargoTheme } from '@/constants/cargo-theme';
+import {
+  formatDeliveryDateTime,
+  getDeliveryOrderStatusLabel,
+  subscribeToUserOrders,
+  type DeliveryOrder,
+} from '@/lib/delivery-data';
+import { useAuthSession } from '@/providers/auth-provider';
 
 const filters = ['All', 'Parcel', 'Cargo'] as const;
 
-export default function HistoryScreen() {
+function HistoryScreenContent() {
   const router = useRouter();
+  const { user } = useAuthSession();
   const [activeFilter, setActiveFilter] = useState<(typeof filters)[number]>('All');
+  const [orders, setOrders] = useState<DeliveryOrder[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
 
-  const orders = historyOrders.filter((order) => {
-    if (activeFilter === 'All') return true;
-    if (activeFilter === 'Parcel') return order.type.toLowerCase().includes('parcel');
-    return !order.type.toLowerCase().includes('parcel');
-  });
+  useEffect(() => {
+    if (!user) {
+      setOrders([]);
+      setError('');
+      setLoading(false);
+      return;
+    }
+
+    setLoading(true);
+    setError('');
+
+    const unsubscribe = subscribeToUserOrders(
+      user.uid,
+      (nextOrders) => {
+        setOrders(nextOrders);
+        setLoading(false);
+      },
+      () => {
+        setError('We could not load your order history right now.');
+        setLoading(false);
+      }
+    );
+
+    return unsubscribe;
+  }, [user]);
+
+  const filteredOrders = useMemo(() => {
+    return orders.filter((order) => {
+      if (activeFilter === 'All') return true;
+      if (activeFilter === 'Parcel') return order.flow === 'parcel';
+      return order.flow === 'cargo';
+    });
+  }, [activeFilter, orders]);
+
+  const deliveredOrders = orders.filter((order) => order.status === 'delivered').length;
+  const activeOrders = orders.filter((order) => ['driver_assigned', 'driver_at_pickup', 'in_transit'].includes(order.status)).length;
 
   return (
-    <CargoScreen
-      contentContainerStyle={styles.content}
-      footer={<BottomNav activeTab="history" />}>
+    <CargoScreen contentContainerStyle={styles.content} footer={<BottomNav activeTab="history" />}>
       <CargoHeader
         title="History"
-        subtitle="Review past deliveries, repeat previous routes and monitor your order patterns."
+        subtitle="Review previous bookings, recent dispatch activity and live order outcomes."
         leftAction="menu"
         onLeftPress={() => router.push('/menu')}
         rightIcon="map-marker-path"
@@ -33,12 +74,16 @@ export default function HistoryScreen() {
 
       <View style={styles.statsRow}>
         <View style={styles.statCard}>
-          <Text style={styles.statValue}>24</Text>
-          <Text style={styles.statLabel}>Orders this month</Text>
+          <Text style={styles.statValue}>{orders.length}</Text>
+          <Text style={styles.statLabel}>Orders created</Text>
         </View>
         <View style={styles.statCard}>
-          <Text style={styles.statValue}>91%</Text>
-          <Text style={styles.statLabel}>On-time delivery</Text>
+          <Text style={styles.statValue}>{deliveredOrders}</Text>
+          <Text style={styles.statLabel}>Delivered orders</Text>
+        </View>
+        <View style={styles.statCard}>
+          <Text style={styles.statValue}>{activeOrders}</Text>
+          <Text style={styles.statLabel}>Active with drivers</Text>
         </View>
       </View>
 
@@ -58,37 +103,87 @@ export default function HistoryScreen() {
       </View>
 
       <SectionHeader title="Recent orders" />
-      {orders.map((order) => (
+      {loading ? (
+        <View style={styles.emptyState}>
+          <ActivityIndicator color={cargoTheme.colors.primary} />
+          <Text style={styles.emptyTitle}>Loading orders</Text>
+          <Text style={styles.emptyText}>We are reading your Firestore order history now.</Text>
+        </View>
+      ) : null}
+
+      {!loading && !user ? (
+        <View style={styles.emptyState}>
+          <MaterialCommunityIcons name="account-lock-outline" size={30} color="#94A3B8" />
+          <Text style={styles.emptyTitle}>Sign in to view history</Text>
+          <Text style={styles.emptyText}>Your previous parcel and cargo orders appear here after you log in.</Text>
+        </View>
+      ) : null}
+
+      {!loading && !!error ? (
+        <View style={styles.emptyState}>
+          <MaterialCommunityIcons name="cloud-alert-outline" size={30} color="#94A3B8" />
+          <Text style={styles.emptyTitle}>History is unavailable</Text>
+          <Text style={styles.emptyText}>{error}</Text>
+        </View>
+      ) : null}
+
+      {!loading && user && !error && !filteredOrders.length ? (
+        <View style={styles.emptyState}>
+          <MaterialCommunityIcons name="history" size={30} color="#94A3B8" />
+          <Text style={styles.emptyTitle}>No orders yet</Text>
+          <Text style={styles.emptyText}>Create your first parcel or cargo request and it will appear here automatically.</Text>
+        </View>
+      ) : null}
+
+      {filteredOrders.map((order) => (
         <TouchableOpacity
           key={order.id}
           style={styles.orderCard}
           activeOpacity={0.88}
-          onPress={() => router.push('/track-order')}>
+          onPress={() =>
+            router.push({
+              pathname: '/track-order',
+              params: { orderId: order.id },
+            })
+          }>
           <View style={styles.orderLeading}>
             <View style={styles.orderIconWrap}>
               <MaterialCommunityIcons
-                name={order.type.toLowerCase().includes('parcel') ? 'package-variant-closed' : 'truck-fast-outline'}
+                name={order.flow === 'parcel' ? 'package-variant-closed' : 'truck-fast-outline'}
                 size={20}
                 color={cargoTheme.colors.text}
               />
             </View>
             <View style={styles.orderCopy}>
-              <Text style={styles.orderTitle}>{order.type}</Text>
-              <Text style={styles.orderRoute}>{order.route}</Text>
+              <Text style={styles.orderTitle}>{order.serviceLabel}</Text>
+              <Text style={styles.orderRoute}>{order.pickupLabel} to {order.dropoffLabel}</Text>
               <Text style={styles.orderMeta}>
-                {order.id} • {order.time}
+                {order.orderNumber} • {formatDeliveryDateTime(order.createdAt)}
               </Text>
             </View>
           </View>
           <View style={styles.orderTrailing}>
-            <Text style={styles.orderAmount}>{order.amount}</Text>
-            <Text style={[styles.orderStatus, order.status === 'Canceled' && styles.orderStatusCanceled]}>
-              {order.status}
+            <Text style={styles.orderAmount}>{order.totalLabel}</Text>
+            <Text
+              style={[
+                styles.orderStatus,
+                order.status === 'cancelled' && styles.orderStatusCanceled,
+                order.status === 'delivered' && styles.orderStatusDelivered,
+              ]}>
+              {getDeliveryOrderStatusLabel(order.status)}
             </Text>
           </View>
         </TouchableOpacity>
       ))}
     </CargoScreen>
+  );
+}
+
+export default function HistoryScreen() {
+  return (
+    <AuthSessionBoundary>
+      <HistoryScreenContent />
+    </AuthSessionBoundary>
   );
 }
 
@@ -143,6 +238,24 @@ const styles = StyleSheet.create({
   filterTextActive: {
     color: cargoTheme.colors.primaryDark,
   },
+  emptyState: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 26,
+    paddingHorizontal: 18,
+    gap: 8,
+  },
+  emptyTitle: {
+    fontSize: 18,
+    fontWeight: '800',
+    color: cargoTheme.colors.text,
+  },
+  emptyText: {
+    textAlign: 'center',
+    fontSize: 13,
+    lineHeight: 20,
+    color: cargoTheme.colors.subtext,
+  },
   orderCard: {
     backgroundColor: cargoTheme.colors.surface,
     borderRadius: 24,
@@ -190,6 +303,7 @@ const styles = StyleSheet.create({
   },
   orderTrailing: {
     alignItems: 'flex-end',
+    maxWidth: 120,
   },
   orderAmount: {
     fontSize: 13,
@@ -198,11 +312,15 @@ const styles = StyleSheet.create({
     marginBottom: 6,
   },
   orderStatus: {
+    textAlign: 'right',
     fontSize: 12,
     fontWeight: '700',
-    color: cargoTheme.colors.primaryDark,
+    color: cargoTheme.colors.info,
   },
   orderStatusCanceled: {
     color: cargoTheme.colors.warning,
+  },
+  orderStatusDelivered: {
+    color: cargoTheme.colors.primaryDark,
   },
 });

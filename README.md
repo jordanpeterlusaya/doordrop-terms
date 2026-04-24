@@ -25,6 +25,32 @@ In the output, you'll find options to open the app in a
 
 You can start developing by editing the files inside the **app** directory. This project uses [file-based routing](https://docs.expo.dev/router/introduction).
 
+## Standalone admin website
+
+The repo also includes a separate Firebase-backed dispatch website in `admin-website/`.
+
+```bash
+npm run admin:serve
+```
+
+Then open `http://localhost:4173`.
+
+## DoorDropDrive app
+
+The repo also includes a separate driver-facing Expo app in `doordropdrive/`.
+
+```bash
+npm run drive:start
+```
+
+Inside that app, drivers can:
+
+- sign in or register with Firebase Authentication
+- register their vehicle details
+- share live foreground GPS updates to Firestore
+- see pending orders and accept them
+- move active orders through pickup, transit, and delivered states
+
 ## Get a fresh project
 
 When you're ready, run:

@@ -14,6 +14,7 @@ import {
 } from 'react-native';
 
 import { bottomTabs, cargoTheme, type AppTabKey, type CargoIcon } from '@/constants/cargo-theme';
+import { typography } from '@/constants/typography';
 
 type CargoScreenProps = {
   children: React.ReactNode;
@@ -279,7 +280,7 @@ const styles = StyleSheet.create({
   headerTitle: {
     fontSize: 28,
     lineHeight: 34,
-    fontWeight: '800',
+    fontFamily: typography.extrabold,
   },
   headerSubtitle: {
     marginTop: 8,
@@ -301,7 +302,7 @@ const styles = StyleSheet.create({
   },
   buttonText: {
     fontSize: 16,
-    fontWeight: '800',
+    fontFamily: typography.extrabold,
   },
   sectionHeader: {
     marginBottom: 12,
@@ -311,12 +312,12 @@ const styles = StyleSheet.create({
   },
   sectionTitle: {
     fontSize: 18,
-    fontWeight: '800',
+    fontFamily: typography.extrabold,
     color: cargoTheme.colors.text,
   },
   sectionAction: {
     fontSize: 13,
-    fontWeight: '700',
+    fontFamily: typography.bold,
     color: cargoTheme.colors.primary,
   },
   menuRow: {
@@ -350,7 +351,7 @@ const styles = StyleSheet.create({
   },
   menuTitle: {
     fontSize: 15,
-    fontWeight: '800',
+    fontFamily: typography.extrabold,
     color: cargoTheme.colors.text,
     marginBottom: 3,
   },
@@ -361,7 +362,7 @@ const styles = StyleSheet.create({
   },
   menuTrailing: {
     fontSize: 12,
-    fontWeight: '700',
+    fontFamily: typography.bold,
     color: cargoTheme.colors.primaryDark,
     marginRight: 8,
   },
@@ -373,16 +374,17 @@ const styles = StyleSheet.create({
   },
   summaryLabel: {
     fontSize: 13,
+    fontFamily: typography.bold,
     color: cargoTheme.colors.subtext,
   },
   summaryValue: {
     fontSize: 14,
-    fontWeight: '700',
+    fontFamily: typography.bold,
     color: cargoTheme.colors.text,
   },
   summaryValueStrong: {
     fontSize: 17,
-    fontWeight: '800',
+    fontFamily: typography.extrabold,
   },
   bottomNav: {
     flexDirection: 'row',
@@ -410,7 +412,7 @@ const styles = StyleSheet.create({
   },
   navLabel: {
     fontSize: 12,
-    fontWeight: '700',
+    fontFamily: typography.bold,
     color: '#94A3B8',
   },
   navLabelActive: {

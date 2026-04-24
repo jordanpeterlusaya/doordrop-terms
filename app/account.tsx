@@ -1,12 +1,46 @@
 import { useRouter } from 'expo-router';
-import React from 'react';
-import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import React, { useMemo, useState } from 'react';
+import { ActivityIndicator, Alert, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 
+import { AuthSessionBoundary } from '@/components/auth/session-boundary';
 import { BottomNav, CargoHeader, MenuRow, CargoScreen, PrimaryButton } from '@/components/cargo-ui';
 import { accountSections, cargoTheme } from '@/constants/cargo-theme';
+import { typography } from '@/constants/typography';
+import { useAuthSession } from '@/providers/auth-provider';
 
-export default function AccountScreen() {
+function AccountScreenContent() {
   const router = useRouter();
+  const { authMethod, profile, profileLoading, signOut, user } = useAuthSession();
+  const [signingOut, setSigningOut] = useState(false);
+
+  const initials = useMemo(() => {
+    const source = profile?.fullName?.trim() || user?.displayName?.trim() || user?.email?.trim() || 'DoorDrop User';
+    return source
+      .split(/\s+/)
+      .slice(0, 2)
+      .map((part) => part[0]?.toUpperCase() ?? '')
+      .join('');
+  }, [profile?.fullName, user?.displayName, user?.email]);
+
+  const profileName = profile?.fullName?.trim() || user?.displayName?.trim() || 'DoorDrop User';
+  const profileMeta = user?.email || 'Signed in with Google';
+
+  const handleSignOut = async () => {
+    if (signingOut) {
+      return;
+    }
+
+    setSigningOut(true);
+
+    try {
+      await signOut();
+      router.replace('/login');
+    } catch {
+      Alert.alert('Sign out failed', 'Please try again.');
+    } finally {
+      setSigningOut(false);
+    }
+  };
 
   return (
     <CargoScreen contentContainerStyle={styles.content} footer={<BottomNav activeTab="account" />}>
@@ -21,10 +55,21 @@ export default function AccountScreen() {
 
       <View style={styles.profileCard}>
         <View style={styles.avatar}>
-          <Text style={styles.avatarText}>DS</Text>
+          <Text style={styles.avatarText}>{initials}</Text>
         </View>
-        <Text style={styles.profileName}>DoorDrop Studio</Text>
-        <Text style={styles.profileMeta}>Business sender • Dar es Salaam</Text>
+        <Text style={styles.profileName}>{profileName}</Text>
+        <Text style={styles.profileMeta}>{profileMeta}</Text>
+        <Text style={styles.verificationBadge}>
+          {profileLoading
+            ? 'Refreshing profile...'
+            : profile?.phoneNumber
+              ? `Phone on file: ${profile.phoneNumber}`
+              : authMethod === 'google'
+                ? 'Google account connected'
+                : authMethod === 'email'
+                  ? 'Email account connected'
+                  : 'Guest browsing mode'}
+        </Text>
         <TouchableOpacity style={styles.editProfileButton} onPress={() => router.push('/profile-edit')}>
           <Text style={styles.editProfileText}>Edit profile</Text>
         </TouchableOpacity>
@@ -60,6 +105,7 @@ export default function AccountScreen() {
         title="Saved places"
         subtitle="Home, office, warehouse and favorite customer drop-offs"
         trailingLabel="3 saved"
+        onPress={() => router.push('/saved-places')}
       />
       <MenuRow
         icon="account-edit-outline"
@@ -77,10 +123,26 @@ export default function AccountScreen() {
         icon="shield-check-outline"
         title="Policies"
         subtitle="Review terms, privacy and delivery protection policies"
+        onPress={() => router.push('/policies')}
       />
 
-      <PrimaryButton label="Sign out" variant="dark" icon="logout" onPress={() => router.replace('/login')} style={styles.logoutButton} />
+      <PrimaryButton
+        label={signingOut ? 'Signing out...' : 'Sign out'}
+        variant="dark"
+        icon="logout"
+        onPress={handleSignOut}
+        style={styles.logoutButton}
+      />
+      {signingOut ? <ActivityIndicator style={styles.logoutLoader} color={cargoTheme.colors.primary} /> : null}
     </CargoScreen>
+  );
+}
+
+export default function AccountScreen() {
+  return (
+    <AuthSessionBoundary>
+      <AccountScreenContent />
+    </AuthSessionBoundary>
   );
 }
 
@@ -106,12 +168,12 @@ const styles = StyleSheet.create({
   },
   avatarText: {
     fontSize: 24,
-    fontWeight: '800',
+    fontFamily: typography.extrabold,
     color: '#FFFFFF',
   },
   profileName: {
     fontSize: 24,
-    fontWeight: '800',
+    fontFamily: typography.extrabold,
     color: '#FFFFFF',
     marginBottom: 4,
   },
@@ -130,7 +192,13 @@ const styles = StyleSheet.create({
   editProfileText: {
     color: '#FFFFFF',
     fontSize: 13,
-    fontWeight: '700',
+    fontFamily: typography.bold,
+  },
+  verificationBadge: {
+    color: '#BBF7D0',
+    fontSize: 12,
+    fontFamily: typography.bold,
+    marginBottom: 12,
   },
   profileStats: {
     width: '100%',
@@ -145,13 +213,13 @@ const styles = StyleSheet.create({
   },
   profileStatValue: {
     fontSize: 18,
-    fontWeight: '800',
+    fontFamily: typography.extrabold,
     color: '#FFFFFF',
     marginBottom: 4,
   },
   profileStatLabel: {
     fontSize: 11,
-    fontWeight: '600',
+    fontFamily: typography.semibold,
     color: '#D7E1EA',
   },
   profileDivider: {
@@ -163,7 +231,7 @@ const styles = StyleSheet.create({
   },
   sectionTitle: {
     fontSize: 16,
-    fontWeight: '800',
+    fontFamily: typography.extrabold,
     color: cargoTheme.colors.text,
     marginBottom: 10,
   },
@@ -183,16 +251,19 @@ const styles = StyleSheet.create({
   },
   detailLabel: {
     fontSize: 12,
-    fontWeight: '700',
+    fontFamily: typography.bold,
     color: cargoTheme.colors.subtext,
     marginBottom: 4,
   },
   detailValue: {
     fontSize: 15,
-    fontWeight: '800',
+    fontFamily: typography.extrabold,
     color: cargoTheme.colors.text,
   },
   logoutButton: {
     marginTop: 8,
+  },
+  logoutLoader: {
+    marginTop: 12,
   },
 });

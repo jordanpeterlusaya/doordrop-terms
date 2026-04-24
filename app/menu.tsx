@@ -1,13 +1,26 @@
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import React from 'react';
-import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { Alert, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 
+import { AuthSessionBoundary } from '@/components/auth/session-boundary';
 import { CargoHeader, CargoScreen, MenuRow, PrimaryButton } from '@/components/cargo-ui';
 import { cargoTheme, menuSections } from '@/constants/cargo-theme';
+import { typography } from '@/constants/typography';
+import { useAuthSession } from '@/providers/auth-provider';
 
-export default function MenuScreen() {
+function MenuScreenContent() {
   const router = useRouter();
+  const { profile, signOut, user } = useAuthSession();
+
+  const handleSignOut = async () => {
+    try {
+      await signOut();
+      router.replace('/login');
+    } catch {
+      Alert.alert('Sign out failed', 'Please try again.');
+    }
+  };
 
   return (
     <CargoScreen contentContainerStyle={styles.content}>
@@ -24,8 +37,8 @@ export default function MenuScreen() {
             <Text style={styles.avatarText}>DS</Text>
           </View>
           <View style={styles.profileCopy}>
-            <Text style={styles.profileName}>DoorDrop Studio</Text>
-            <Text style={styles.profileMeta}>Business sender • 12 active deliveries this month</Text>
+            <Text style={styles.profileName}>{profile?.fullName?.trim() || user?.displayName?.trim() || 'DoorDrop User'}</Text>
+            <Text style={styles.profileMeta}>{user?.email?.trim() || 'Guest browsing available until final checkout'}</Text>
           </View>
           <TouchableOpacity style={styles.profileAction}>
             <MaterialCommunityIcons name="bell-outline" size={20} color="#FFFFFF" />
@@ -59,8 +72,16 @@ export default function MenuScreen() {
         <PrimaryButton label="Open account & support" variant="secondary" onPress={() => router.push('/account')} />
       </View>
 
-      <PrimaryButton label="Sign out" variant="dark" icon="logout" onPress={() => router.replace('/login')} />
+      <PrimaryButton label="Sign out" variant="dark" icon="logout" onPress={handleSignOut} />
     </CargoScreen>
+  );
+}
+
+export default function MenuScreen() {
+  return (
+    <AuthSessionBoundary>
+      <MenuScreenContent />
+    </AuthSessionBoundary>
   );
 }
 
@@ -90,7 +111,7 @@ const styles = StyleSheet.create({
   },
   avatarText: {
     fontSize: 20,
-    fontWeight: '800',
+    fontFamily: typography.extrabold,
     color: '#FFFFFF',
   },
   profileCopy: {
@@ -99,7 +120,7 @@ const styles = StyleSheet.create({
   },
   profileName: {
     fontSize: 20,
-    fontWeight: '800',
+    fontFamily: typography.extrabold,
     color: '#FFFFFF',
     marginBottom: 3,
   },
@@ -126,7 +147,7 @@ const styles = StyleSheet.create({
   },
   sectionTitle: {
     fontSize: 16,
-    fontWeight: '800',
+    fontFamily: typography.extrabold,
     color: cargoTheme.colors.text,
     marginBottom: 10,
   },
@@ -141,7 +162,7 @@ const styles = StyleSheet.create({
   },
   helpTitle: {
     fontSize: 18,
-    fontWeight: '800',
+    fontFamily: typography.extrabold,
     color: cargoTheme.colors.primaryDark,
     marginBottom: 8,
   },

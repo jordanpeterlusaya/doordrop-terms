@@ -1,210 +1,237 @@
 import { MaterialCommunityIcons } from '@expo/vector-icons';
-import { useRouter } from 'expo-router';
-import React, { useMemo, useState } from 'react';
-import { KeyboardAvoidingView, Platform, Pressable, SafeAreaView, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import { useLocalSearchParams, useRouter } from 'expo-router';
+import React, { useEffect, useState } from 'react';
+import { SafeAreaView, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 
+import { AuthSessionBoundary } from '@/components/auth/session-boundary';
+import { PrimaryButton } from '@/components/cargo-ui';
 import { cargoTheme } from '@/constants/cargo-theme';
+import { typography } from '@/constants/typography';
+import { resolveAuthReturnTo } from '@/lib/auth-navigation';
+import { useAuthSession } from '@/providers/auth-provider';
 
-export default function RegisterScreen() {
+function RegisterScreenContent() {
   const router = useRouter();
+  const params = useLocalSearchParams<{ returnTo?: string }>();
+  const { authError, authenticating, clearAuthError, registerWithEmail, user } = useAuthSession();
   const [fullName, setFullName] = useState('');
+  const [phoneNumber, setPhoneNumber] = useState('');
   const [email, setEmail] = useState('');
-  const [phone, setPhone] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
-  const [acceptedTerms, setAcceptedTerms] = useState(false);
-  const [showPassword, setShowPassword] = useState(false);
-  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
+  const [formError, setFormError] = useState('');
+  const returnTo = resolveAuthReturnTo(params.returnTo);
 
-  const trimmedPassword = password.trim();
-  const trimmedConfirmPassword = confirmPassword.trim();
-  const passwordIsLongEnough = trimmedPassword.length >= 6;
-  const passwordsMatch = trimmedPassword.length > 0 && trimmedPassword === trimmedConfirmPassword;
-  const emailLooksValid = /\S+@\S+\.\S+/.test(email.trim());
-  const phoneLooksValid = phone.replace(/\D/g, '').length >= 9;
-  const isFormValid =
-    fullName.trim().length >= 2 &&
-    emailLooksValid &&
-    phoneLooksValid &&
-    passwordIsLongEnough &&
-    passwordsMatch &&
-    acceptedTerms;
-
-  const passwordStrengthLabel = useMemo(() => {
-    if (!password.length) {
-      return 'Use at least 6 characters for a secure password.';
+  useEffect(() => {
+    if (!user) {
+      return;
     }
 
-    if (trimmedPassword.length < 6) {
-      return 'Too short. Add a few more characters.';
+    if (returnTo === '/order-review' && router.canGoBack()) {
+      router.back();
+      return;
     }
 
-    if (!/[A-Z]/.test(trimmedPassword) || !/[0-9]/.test(trimmedPassword)) {
-      return 'Good start. Add a capital letter and a number for stronger security.';
+    router.replace(returnTo);
+  }, [returnTo, router, user]);
+
+  const handleRegister = () => {
+    const trimmedFullName = fullName.trim();
+    const trimmedPhoneNumber = phoneNumber.trim();
+    const trimmedEmail = email.trim().toLowerCase();
+
+    if (!trimmedFullName || !trimmedPhoneNumber || !trimmedEmail || !password.trim()) {
+      setFormError('Fill in full name, phone number, email and password.');
+      return;
     }
 
-    return 'Strong password. Your account setup looks ready.';
-  }, [password.length, trimmedPassword]);
+    if (password.length < 6) {
+      setFormError('Password must have at least 6 characters.');
+      return;
+    }
 
-  const createAccount = () => {
-    router.replace('/home');
+    if (password !== confirmPassword) {
+      setFormError('Password confirmation does not match.');
+      return;
+    }
+
+    setFormError('');
+    void registerWithEmail({
+      fullName: trimmedFullName,
+      phoneNumber: trimmedPhoneNumber,
+      email: trimmedEmail,
+      password,
+    });
   };
 
   return (
     <SafeAreaView style={styles.safeArea}>
-      <KeyboardAvoidingView
-        style={styles.flex}
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-        <ScrollView
-          contentContainerStyle={styles.scrollContent}
-          keyboardShouldPersistTaps="handled"
-          showsVerticalScrollIndicator={false}>
-          <View style={styles.card}>
-            <View style={styles.cardHeader}>
-              <Text style={styles.cardTitle}>Create your DoorDrop account</Text>
-              <Text style={styles.cardSubtitle}>Fill in the details below to open your account.</Text>
-            </View>
+      <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
+        <View style={styles.card}>
+          <View style={styles.badge}>
+            <MaterialCommunityIcons name="account-check-outline" size={18} color={cargoTheme.colors.primaryDark} />
+            <Text style={styles.badgeText}>Fast onboarding</Text>
+          </View>
 
-            <View style={styles.fieldGroup}>
-              <Text style={styles.label}>Full name</Text>
-              <TextInput
-                value={fullName}
-                onChangeText={setFullName}
-                placeholder="Enter your full name"
-                placeholderTextColor="#94A3B8"
-                style={styles.textInput}
-              />
-            </View>
+          <View style={styles.cardHeader}>
+            <Text style={styles.cardTitle}>Create your DoorDrop account</Text>
+            <Text style={styles.cardSubtitle}>
+              Register with your full name, phone number, email and password, then return and complete your order.
+            </Text>
+          </View>
 
-            <View style={styles.fieldGroup}>
-              <Text style={styles.label}>Email address</Text>
-              <TextInput
-                value={email}
-                onChangeText={setEmail}
-                placeholder="you@example.com"
-                placeholderTextColor="#94A3B8"
-                keyboardType="email-address"
-                autoCapitalize="none"
-                style={styles.textInput}
-              />
-            </View>
+          <View style={styles.infoCard}>
+            <MaterialCommunityIcons
+              name={authError || formError ? 'alert-circle-outline' : 'shield-check-outline'}
+              size={18}
+              color={authError || formError ? '#DC2626' : cargoTheme.colors.primary}
+            />
+            <Text style={styles.infoText}>
+              {authError || formError || 'We use these details for customer identity, order updates and driver contact.'}
+            </Text>
+          </View>
 
-            <View style={styles.fieldGroup}>
-              <Text style={styles.label}>Phone number</Text>
-              <TextInput
-                value={phone}
-                onChangeText={setPhone}
-                placeholder="+255 742 000 111"
-                placeholderTextColor="#94A3B8"
-                keyboardType="phone-pad"
-                style={styles.textInput}
-              />
-            </View>
-
-            <View style={styles.fieldGroup}>
-              <Text style={styles.label}>Password</Text>
-              <View style={styles.passwordWrap}>
-                <TextInput
-                  value={password}
-                  onChangeText={setPassword}
-                  placeholder="Create a password"
-                  placeholderTextColor="#94A3B8"
-                  secureTextEntry={!showPassword}
-                  style={styles.passwordInput}
-                />
-                <TouchableOpacity style={styles.eyeButton} onPress={() => setShowPassword((value) => !value)}>
-                  <MaterialCommunityIcons
-                    name={showPassword ? 'eye-off-outline' : 'eye-outline'}
-                    size={20}
-                    color={cargoTheme.colors.subtext}
-                  />
-                </TouchableOpacity>
-              </View>
-            </View>
-
-            <View style={styles.fieldGroup}>
-              <Text style={styles.label}>Confirm password</Text>
-              <View style={styles.passwordWrap}>
-                <TextInput
-                  value={confirmPassword}
-                  onChangeText={setConfirmPassword}
-                  placeholder="Repeat your password"
-                  placeholderTextColor="#94A3B8"
-                  secureTextEntry={!showConfirmPassword}
-                  style={styles.passwordInput}
-                />
-                <TouchableOpacity
-                  style={styles.eyeButton}
-                  onPress={() => setShowConfirmPassword((value) => !value)}>
-                  <MaterialCommunityIcons
-                    name={showConfirmPassword ? 'eye-off-outline' : 'eye-outline'}
-                    size={20}
-                    color={cargoTheme.colors.subtext}
-                  />
-                </TouchableOpacity>
-              </View>
-            </View>
-
-            <View style={styles.infoCard}>
-              <MaterialCommunityIcons
-                name={passwordIsLongEnough && passwordsMatch ? 'shield-check-outline' : 'lock-outline'}
-                size={18}
-                color={passwordIsLongEnough && passwordsMatch ? cargoTheme.colors.primary : cargoTheme.colors.info}
-              />
-              <Text style={styles.infoText}>{passwordStrengthLabel}</Text>
-            </View>
-
-            {!passwordsMatch && confirmPassword.length > 0 ? (
-              <Text style={styles.validationText}>Passwords do not match yet.</Text>
-            ) : null}
-            {!emailLooksValid && email.length > 0 ? (
-              <Text style={styles.validationText}>Enter a valid email address.</Text>
-            ) : null}
-
-            <View style={styles.termsCard}>
-              <TouchableOpacity
-                activeOpacity={0.85}
-                style={[styles.checkbox, acceptedTerms && styles.checkboxChecked]}
-                onPress={() => setAcceptedTerms((value) => !value)}>
-                {acceptedTerms ? <MaterialCommunityIcons name="check" size={16} color="#FFFFFF" /> : null}
-              </TouchableOpacity>
-              <View style={styles.termsCopy}>
-                <Text style={styles.termsText}>
-                  I agree to the{' '}
-                  <Text style={styles.termsLink} onPress={() => router.push('/terms')}>
-                    Terms & Conditions
-                  </Text>{' '}
-                  and{' '}
-                  <Text style={styles.termsLink} onPress={() => router.push('/privacy-policy')}>
-                    Privacy Policy
-                  </Text>
-                  .
+          <View style={styles.termsCard}>
+            <MaterialCommunityIcons name="file-document-outline" size={18} color={cargoTheme.colors.primaryDark} />
+            <View style={styles.termsCopy}>
+              <Text style={styles.termsText}>
+                By continuing, you agree to the{' '}
+                <Text style={styles.termsLink} onPress={() => router.push('/terms')}>
+                  Terms & Conditions
+                </Text>{' '}
+                and{' '}
+                <Text style={styles.termsLink} onPress={() => router.push('/privacy-policy')}>
+                  Privacy Policy
                 </Text>
-              </View>
-            </View>
-
-            <Pressable
-              disabled={!isFormValid}
-              onPress={createAccount}
-              style={({ pressed }) => [
-                styles.primaryButton,
-                !isFormValid && styles.primaryButtonDisabled,
-                pressed && isFormValid && styles.primaryButtonPressed,
-              ]}>
-              <Text style={styles.primaryButtonText}>Create account</Text>
-              <MaterialCommunityIcons name="arrow-right" size={18} color="#FFFFFF" />
-            </Pressable>
-
-            <View style={styles.footerRow}>
-              <Text style={styles.footerText}>Already have an account?</Text>
-              <TouchableOpacity onPress={() => router.push('/login')}>
-                <Text style={styles.footerLink}>Sign in</Text>
-              </TouchableOpacity>
+                .
+              </Text>
             </View>
           </View>
-        </ScrollView>
-      </KeyboardAvoidingView>
+
+          <View style={styles.formGroup}>
+            <Text style={styles.fieldLabel}>Full name</Text>
+            <TextInput
+              value={fullName}
+              onChangeText={(value) => {
+                setFullName(value);
+                if (formError) {
+                  setFormError('');
+                }
+                if (authError) {
+                  clearAuthError();
+                }
+              }}
+              placeholder="Enter your full name"
+              style={styles.input}
+              placeholderTextColor="#94A3B8"
+            />
+          </View>
+
+          <View style={styles.formGroup}>
+            <Text style={styles.fieldLabel}>Phone number</Text>
+            <TextInput
+              value={phoneNumber}
+              onChangeText={(value) => {
+                setPhoneNumber(value);
+                if (formError) {
+                  setFormError('');
+                }
+                if (authError) {
+                  clearAuthError();
+                }
+              }}
+              placeholder="+255 7XX XXX XXX"
+              keyboardType="phone-pad"
+              style={styles.input}
+              placeholderTextColor="#94A3B8"
+            />
+          </View>
+
+          <View style={styles.formGroup}>
+            <Text style={styles.fieldLabel}>Email address</Text>
+            <TextInput
+              value={email}
+              onChangeText={(value) => {
+                setEmail(value);
+                if (formError) {
+                  setFormError('');
+                }
+                if (authError) {
+                  clearAuthError();
+                }
+              }}
+              placeholder="you@example.com"
+              keyboardType="email-address"
+              autoCapitalize="none"
+              autoCorrect={false}
+              style={styles.input}
+              placeholderTextColor="#94A3B8"
+            />
+          </View>
+
+          <View style={styles.formGroup}>
+            <Text style={styles.fieldLabel}>Password</Text>
+            <TextInput
+              value={password}
+              onChangeText={(value) => {
+                setPassword(value);
+                if (formError) {
+                  setFormError('');
+                }
+                if (authError) {
+                  clearAuthError();
+                }
+              }}
+              placeholder="Create password"
+              secureTextEntry
+              autoCapitalize="none"
+              autoCorrect={false}
+              style={styles.input}
+              placeholderTextColor="#94A3B8"
+            />
+          </View>
+
+          <View style={styles.formGroup}>
+            <Text style={styles.fieldLabel}>Confirm password</Text>
+            <TextInput
+              value={confirmPassword}
+              onChangeText={(value) => {
+                setConfirmPassword(value);
+                if (formError) {
+                  setFormError('');
+                }
+                if (authError) {
+                  clearAuthError();
+                }
+              }}
+              placeholder="Repeat password"
+              secureTextEntry
+              autoCapitalize="none"
+              autoCorrect={false}
+              style={styles.input}
+              placeholderTextColor="#94A3B8"
+            />
+          </View>
+
+          <PrimaryButton label={authenticating ? 'Creating account...' : 'Register to continue'} onPress={handleRegister} />
+
+          <View style={styles.footerRow}>
+            <Text style={styles.footerText}>Already have a DoorDrop account?</Text>
+            <TouchableOpacity onPress={() => router.push({ pathname: '/login', params: { returnTo } })}>
+              <Text style={styles.footerLink}>Login here</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </ScrollView>
     </SafeAreaView>
+  );
+}
+
+export default function RegisterScreen() {
+  return (
+    <AuthSessionBoundary>
+      <RegisterScreenContent />
+    </AuthSessionBoundary>
   );
 }
 
@@ -212,9 +239,6 @@ const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
     backgroundColor: cargoTheme.colors.canvas,
-  },
-  flex: {
-    flex: 1,
   },
   scrollContent: {
     flexGrow: 1,
@@ -225,16 +249,31 @@ const styles = StyleSheet.create({
   },
   card: {
     borderRadius: cargoTheme.radius.xl,
-    backgroundColor: '#FFFFFF',
+    backgroundColor: cargoTheme.colors.surface,
     padding: 20,
-    gap: 16,
+    gap: 18,
     borderWidth: 1,
-    borderColor: '#E2E8F0',
+    borderColor: '#E5E7EB',
     shadowColor: '#0F172A',
     shadowOpacity: 0.06,
     shadowOffset: { width: 0, height: 12 },
     shadowRadius: 24,
     elevation: 4,
+  },
+  badge: {
+    alignSelf: 'flex-start',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 999,
+    backgroundColor: '#ECFDF5',
+  },
+  badgeText: {
+    color: cargoTheme.colors.primaryDark,
+    fontSize: 12,
+    fontFamily: typography.bold,
   },
   cardHeader: {
     gap: 6,
@@ -242,7 +281,7 @@ const styles = StyleSheet.create({
   cardTitle: {
     color: cargoTheme.colors.text,
     fontSize: 24,
-    fontWeight: '800',
+    fontFamily: typography.extrabold,
     letterSpacing: -0.5,
   },
   cardSubtitle: {
@@ -250,88 +289,28 @@ const styles = StyleSheet.create({
     fontSize: 14,
     lineHeight: 20,
   },
-  fieldGroup: {
-    gap: 10,
-  },
-  label: {
-    color: cargoTheme.colors.text,
-    fontSize: 14,
-    fontWeight: '700',
-  },
-  textInput: {
-    minHeight: 56,
-    borderRadius: 18,
-    borderWidth: 1,
-    borderColor: cargoTheme.colors.line,
-    backgroundColor: '#F8FAFC',
-    paddingHorizontal: 16,
-    fontSize: 15,
-    color: cargoTheme.colors.text,
-  },
-  passwordWrap: {
-    position: 'relative',
-  },
-  passwordInput: {
-    minHeight: 56,
-    borderRadius: 18,
-    borderWidth: 1,
-    borderColor: cargoTheme.colors.line,
-    backgroundColor: '#F8FAFC',
-    paddingLeft: 16,
-    paddingRight: 48,
-    fontSize: 15,
-    color: cargoTheme.colors.text,
-  },
-  eyeButton: {
-    position: 'absolute',
-    right: 14,
-    top: 0,
-    bottom: 0,
-    justifyContent: 'center',
-  },
   infoCard: {
     flexDirection: 'row',
-    alignItems: 'flex-start',
+    alignItems: 'center',
     gap: 10,
     borderRadius: 18,
-    backgroundColor: '#F8FAFC',
     paddingHorizontal: 14,
-    paddingVertical: 13,
+    paddingVertical: 12,
+    backgroundColor: '#F8FAFC',
   },
   infoText: {
     flex: 1,
     color: cargoTheme.colors.subtext,
     fontSize: 13,
-    lineHeight: 19,
-  },
-  validationText: {
-    color: '#DC2626',
-    fontSize: 13,
-    fontWeight: '600',
-    marginTop: -4,
+    lineHeight: 18,
   },
   termsCard: {
     flexDirection: 'row',
     alignItems: 'flex-start',
     gap: 12,
     borderRadius: 18,
-    backgroundColor: '#F8FAFC',
     padding: 14,
-  },
-  checkbox: {
-    width: 24,
-    height: 24,
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: cargoTheme.colors.line,
-    backgroundColor: '#FFFFFF',
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginTop: 1,
-  },
-  checkboxChecked: {
-    backgroundColor: cargoTheme.colors.primary,
-    borderColor: cargoTheme.colors.primary,
+    backgroundColor: '#F8FAFC',
   },
   termsCopy: {
     flex: 1,
@@ -342,28 +321,26 @@ const styles = StyleSheet.create({
     lineHeight: 20,
   },
   termsLink: {
-    color: cargoTheme.colors.info,
-    fontWeight: '700',
+    color: cargoTheme.colors.primary,
+    fontFamily: typography.bold,
   },
-  primaryButton: {
-    minHeight: 56,
-    borderRadius: 18,
-    backgroundColor: cargoTheme.colors.primary,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 10,
+  formGroup: {
+    gap: 8,
   },
-  primaryButtonDisabled: {
-    backgroundColor: '#86C99A',
+  fieldLabel: {
+    color: cargoTheme.colors.text,
+    fontSize: 13,
+    fontFamily: typography.bold,
   },
-  primaryButtonPressed: {
-    opacity: 0.92,
-  },
-  primaryButtonText: {
-    color: '#FFFFFF',
-    fontSize: 16,
-    fontWeight: '800',
+  input: {
+    borderWidth: 1,
+    borderColor: '#D9E2EC',
+    borderRadius: 16,
+    paddingHorizontal: 14,
+    paddingVertical: 13,
+    fontSize: 15,
+    color: cargoTheme.colors.text,
+    backgroundColor: '#FFFFFF',
   },
   footerRow: {
     flexDirection: 'row',
@@ -373,11 +350,11 @@ const styles = StyleSheet.create({
   },
   footerText: {
     color: cargoTheme.colors.subtext,
-    fontSize: 14,
+    fontSize: 13,
   },
   footerLink: {
-    color: cargoTheme.colors.info,
-    fontSize: 14,
-    fontWeight: '800',
+    color: cargoTheme.colors.primary,
+    fontSize: 13,
+    fontFamily: typography.bold,
   },
 });

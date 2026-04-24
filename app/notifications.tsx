@@ -1,43 +1,66 @@
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
-import React from 'react';
-import { StyleSheet, Text, View } from 'react-native';
+import React, { useEffect } from 'react';
+import { ActivityIndicator, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 
+import { AuthNotificationBoundary } from '@/components/auth/session-boundary';
 import { CargoHeader, CargoScreen } from '@/components/cargo-ui';
 import { cargoTheme } from '@/constants/cargo-theme';
+import { formatDeliveryDateTime, getDeliveryOrderStatusLabel, type DeliveryOrderStatus } from '@/lib/delivery-data';
+import { useNotifications } from '@/providers/notification-provider';
 
-const notifications = [
-  {
-    id: '1',
-    title: 'Driver is close to pickup',
-    message: 'Your last courier request is 8 minutes away from the pickup point.',
-    time: 'Just now',
+function getNotificationPresentation(input: {
+  type: 'order_created' | 'order_status' | 'promotion';
+  orderStatus?: DeliveryOrderStatus;
+}) {
+  if (input.type === 'promotion') {
+    return {
+      icon: 'ticket-percent-outline' as const,
+      tint: '#FFF7ED',
+      iconColor: '#EA580C',
+    };
+  }
+
+  if (input.type === 'order_created') {
+    return {
+      icon: 'clipboard-check-outline' as const,
+      tint: '#ECFDF3',
+      iconColor: '#166534',
+    };
+  }
+
+  if (input.orderStatus === 'delivered') {
+    return {
+      icon: 'check-decagram-outline' as const,
+      tint: '#EFF6FF',
+      iconColor: '#2563EB',
+    };
+  }
+
+  if (input.orderStatus === 'cancelled') {
+    return {
+      icon: 'close-circle-outline' as const,
+      tint: '#FEF2F2',
+      iconColor: '#DC2626',
+    };
+  }
+
+  return {
     icon: 'truck-fast-outline' as const,
     tint: '#DCFCE7',
     iconColor: '#166534',
-  },
-  {
-    id: '2',
-    title: 'Delivery completed',
-    message: 'Order DD-20481 was delivered successfully and proof of delivery is available.',
-    time: 'Today, 11:40',
-    icon: 'check-decagram-outline' as const,
-    tint: '#EFF6FF',
-    iconColor: '#2563EB',
-  },
-  {
-    id: '3',
-    title: 'Promo available',
-    message: 'You have a parcel discount for your next in-city delivery this week.',
-    time: 'Yesterday',
-    icon: 'ticket-percent-outline' as const,
-    tint: '#FFF7ED',
-    iconColor: '#EA580C',
-  },
-] as const;
+  };
+}
 
-export default function NotificationsScreen() {
+function NotificationsScreenContent() {
   const router = useRouter();
+  const { loading, markAllRead, markRead, notifications, unreadCount } = useNotifications();
+
+  useEffect(() => {
+    if (!loading && unreadCount > 0) {
+      void markAllRead();
+    }
+  }, [loading, markAllRead, unreadCount]);
 
   return (
     <CargoScreen contentContainerStyle={styles.content}>
@@ -48,29 +71,85 @@ export default function NotificationsScreen() {
       />
 
       <View style={styles.summaryCard}>
-        <Text style={styles.summaryTitle}>Stay in sync</Text>
+        <Text style={styles.summaryTitle}>{unreadCount > 0 ? `${unreadCount} new update${unreadCount === 1 ? '' : 's'}` : 'Stay in sync'}</Text>
         <Text style={styles.summaryText}>
-          Important delivery activity, driver ETA updates and support messages appear here.
+          {unreadCount > 0
+            ? 'Your latest order activity is ready below and will keep updating automatically.'
+            : 'Important delivery activity, driver ETA updates and support messages appear here.'}
         </Text>
       </View>
 
-      <View style={styles.listCard}>
-        {notifications.map((item, index) => (
-          <View key={item.id} style={[styles.itemRow, index !== notifications.length - 1 && styles.itemBorder]}>
-            <View style={[styles.iconWrap, { backgroundColor: item.tint }]}>
-              <MaterialCommunityIcons name={item.icon} size={20} color={item.iconColor} />
-            </View>
-            <View style={styles.itemCopy}>
-              <View style={styles.itemTop}>
-                <Text style={styles.itemTitle}>{item.title}</Text>
-                <Text style={styles.itemTime}>{item.time}</Text>
-              </View>
-              <Text style={styles.itemMessage}>{item.message}</Text>
-            </View>
-          </View>
-        ))}
-      </View>
+      {loading ? (
+        <View style={styles.emptyState}>
+          <ActivityIndicator color={cargoTheme.colors.primary} />
+          <Text style={styles.emptyTitle}>Loading notifications</Text>
+          <Text style={styles.emptyText}>We are pulling your latest order alerts from Firestore.</Text>
+        </View>
+      ) : null}
+
+      {!loading && !notifications.length ? (
+        <View style={styles.emptyState}>
+          <MaterialCommunityIcons name="bell-outline" size={30} color="#94A3B8" />
+          <Text style={styles.emptyTitle}>No notifications yet</Text>
+          <Text style={styles.emptyText}>When dispatch updates your order, it will appear here automatically.</Text>
+        </View>
+      ) : null}
+
+      {!loading && notifications.length ? (
+        <View style={styles.listCard}>
+          {notifications.map((item, index) => {
+            const presentation = getNotificationPresentation({
+              type: item.type,
+              orderStatus: item.orderStatus,
+            });
+
+            return (
+              <TouchableOpacity
+                key={item.id}
+                activeOpacity={0.88}
+                style={[styles.itemRow, index !== notifications.length - 1 && styles.itemBorder, !item.readAt && styles.itemUnread]}
+                onPress={() => {
+                  void markRead(item.id);
+
+                  if (item.orderId) {
+                    router.push({
+                      pathname: '/track-order',
+                      params: { orderId: item.orderId },
+                    });
+                  }
+                }}>
+                <View style={[styles.iconWrap, { backgroundColor: presentation.tint }]}>
+                  <MaterialCommunityIcons name={presentation.icon} size={20} color={presentation.iconColor} />
+                </View>
+                <View style={styles.itemCopy}>
+                  <View style={styles.itemTop}>
+                    <Text style={styles.itemTitle}>{item.title}</Text>
+                    <Text style={styles.itemTime}>{formatDeliveryDateTime(item.createdAt)}</Text>
+                  </View>
+                  <Text style={styles.itemMessage}>{item.message}</Text>
+                  {item.orderStatus ? (
+                    <Text style={styles.itemMeta}>
+                      {getDeliveryOrderStatusLabel(item.orderStatus)}
+                      {item.orderNumber ? ` • ${item.orderNumber}` : ''}
+                    </Text>
+                  ) : item.orderNumber ? (
+                    <Text style={styles.itemMeta}>{item.orderNumber}</Text>
+                  ) : null}
+                </View>
+              </TouchableOpacity>
+            );
+          })}
+        </View>
+      ) : null}
     </CargoScreen>
+  );
+}
+
+export default function NotificationsScreen() {
+  return (
+    <AuthNotificationBoundary>
+      <NotificationsScreenContent />
+    </AuthNotificationBoundary>
   );
 }
 
@@ -95,6 +174,24 @@ const styles = StyleSheet.create({
     fontSize: 14,
     lineHeight: 21,
   },
+  emptyState: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 32,
+    paddingHorizontal: 24,
+    gap: 8,
+  },
+  emptyTitle: {
+    fontSize: 18,
+    fontWeight: '800',
+    color: cargoTheme.colors.text,
+  },
+  emptyText: {
+    textAlign: 'center',
+    fontSize: 13,
+    lineHeight: 20,
+    color: cargoTheme.colors.subtext,
+  },
   listCard: {
     backgroundColor: cargoTheme.colors.surface,
     borderRadius: 24,
@@ -110,6 +207,11 @@ const styles = StyleSheet.create({
   itemBorder: {
     borderBottomWidth: 1,
     borderBottomColor: '#EDF2F7',
+  },
+  itemUnread: {
+    backgroundColor: '#F8FAFC',
+    marginHorizontal: -18,
+    paddingHorizontal: 18,
   },
   iconWrap: {
     width: 42,
@@ -143,5 +245,10 @@ const styles = StyleSheet.create({
     color: cargoTheme.colors.subtext,
     fontSize: 13,
     lineHeight: 19,
+  },
+  itemMeta: {
+    color: cargoTheme.colors.primaryDark,
+    fontSize: 12,
+    fontWeight: '700',
   },
 });
